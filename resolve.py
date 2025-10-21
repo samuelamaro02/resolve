@@ -324,8 +324,8 @@ with col7:
 # ---------------------------
 # Tabs Navigation
 # ---------------------------
-tab_overview, tab_funnel, tab_creatives, tab_compare, tab_data = st.tabs(
-    ["Visão Geral", "Funil de Vendas", "Anúncios (AD01–AD10)", "Comparações", "Dados"]
+tab_overview, tab_funnel, tab_creatives, tab_compare = st.tabs(
+    ["Visão Geral", "Funil de Vendas", "Anúncios (AD01–AD10)", "Comparações"]
 )
 
 with tab_overview:
@@ -447,146 +447,210 @@ with tab_creatives:
 
 
 # ---------------------------
-# Comparisons & Advanced
+# Marketing Performance Analysis
 # ---------------------------
 with tab_compare:
-    st.markdown("### 📊 Comparações e Análises Avançadas")
-
-    left, right = st.columns(2)
-
-    dims_available = [
-        c
-        for c in [
-            "Nome do anúncio",
-            "Tipo de orçamento do conjunto de anúncios",
-            "Data",
-        ]
-        if c in df.columns
-    ]
-
-    metrics_available = [
-        c
-        for c in [
-            "Impressões",
-            "Cliques no link",
-            "Conversões",
-            "Valor usado (BRL)",
-            "CPC_calc",
-            "CTR_calc",
-            "CPM (custo por 1.000 impressões) (BRL)",
-        ]
-        if c in df.columns
-    ]
-
-    with left:
-        x_axis = st.selectbox("Eixo X", options=metrics_available, index=metrics_available.index("Impressões") if "Impressões" in metrics_available else 0)
-        y_axis = st.selectbox(
-            "Eixo Y",
-            options=metrics_available,
-            index=metrics_available.index("Cliques no link") if "Cliques no link" in metrics_available else 0,
-        )
-        color_dim = st.selectbox("Cor por", options=[None] + dims_available, index=0)
-
-        fig_scatter = px.scatter(
-            df.replace({np.inf: np.nan, -np.inf: np.nan}).dropna(subset=[x_axis, y_axis]),
-            x=x_axis,
-            y=y_axis,
-            color=color_dim,
-            hover_name="Nome do anúncio" if "Nome do anúncio" in df.columns else None,
-            color_discrete_sequence=px.colors.qualitative.Pastel,
-        )
-        fig_scatter.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-    with right:
-        box_metric = st.selectbox("Métrica (boxplot)", options=metrics_available, index=0)
-        group_dim = st.selectbox(
-            "Agrupar por",
-            options=dims_available if dims_available else [None],
-            index=0,
-        )
-        if group_dim is not None and group_dim in df.columns:
-            fig_box = px.box(
-                df.replace({np.inf: np.nan, -np.inf: np.nan}).dropna(subset=[box_metric]),
-                x=group_dim,
-                y=box_metric,
-                color=group_dim,
-                color_discrete_sequence=px.colors.qualitative.Set3,
+    st.markdown("### 📈 Análise de Performance de Marketing")
+    
+    # Performance por Anúncio
+    st.markdown("#### 🎯 Performance por Anúncio")
+    
+    if "Nome do anúncio" in df.columns and not df.empty:
+        # Agrupar dados por anúncio
+        ad_performance = df.groupby("Nome do anúncio").agg({
+            "Impressões": "sum",
+            "Cliques no link": "sum", 
+            "Conversões": "sum",
+            "Valor usado (BRL)": "sum",
+            "CTR_calc": "mean",
+            "CPC_calc": "mean"
+        }).reset_index()
+        
+        # Calcular métricas adicionais
+        ad_performance["CTR_%"] = ad_performance["CTR_calc"] * 100
+        ad_performance["CPA"] = ad_performance["Valor usado (BRL)"] / ad_performance["Conversões"].replace(0, np.nan)
+        ad_performance["ROAS"] = ad_performance["Conversões"] / ad_performance["Valor usado (BRL)"] * 100  # Assumindo valor por conversão = R$100
+        
+        # Top 5 anúncios por conversões
+        top_ads = ad_performance.nlargest(5, "Conversões")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**🏆 Top 5 Anúncios por Conversões**")
+            for idx, row in top_ads.iterrows():
+                st.markdown(f"**{row['Nome do anúncio']}**")
+                st.markdown(f"• Conversões: {int(row['Conversões'])}")
+                st.markdown(f"• CTR: {row['CTR_%']:.2f}%")
+                st.markdown(f"• CPC: R$ {row['CPC_calc']:.2f}")
+                st.markdown(f"• Investimento: R$ {row['Valor usado (BRL)']:.2f}")
+                st.markdown("---")
+        
+        with col2:
+            # Gráfico de barras - Conversões por anúncio
+            fig_conversions = px.bar(
+                top_ads,
+                x="Nome do anúncio",
+                y="Conversões",
+                title="Conversões por Anúncio",
+                color="Conversões",
+                color_continuous_scale="Blues"
             )
-            fig_box.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(fig_box, use_container_width=True)
-        else:
-            st.info("Selecione um agrupamento válido para o boxplot.")
-
-    st.markdown("#### 🔥 Correlação entre Métricas")
-    corr_cols = [c for c in metrics_available if c in df.columns]
-    if len(corr_cols) >= 2:
-        corr = df[corr_cols].replace({np.inf: np.nan, -np.inf: np.nan}).dropna().corr(numeric_only=True)
-        fig_heat = px.imshow(corr, text_auto=True, color_continuous_scale="RdBu", origin="lower")
-        fig_heat.update_layout(height=480, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig_heat, use_container_width=True)
-    else:
-        st.info("Métricas insuficientes para calcular correlação.")
-
-
-# ---------------------------
-# Raw Data + Export + Insights
-# ---------------------------
-with tab_data:
-    st.markdown("### 🧾 Dados Filtrados e Exportação")
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    # Export to Excel of the filtered dataset
-    def to_excel_bytes(dataframe: pd.DataFrame) -> bytes:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            dataframe.to_excel(writer, index=False, sheet_name="dados")
-        return output.getvalue()
-
-    excel_bytes = to_excel_bytes(df)
-    st.download_button(
-        label="⬇️ Baixar XLSX (dados filtrados)",
-        data=excel_bytes,
-        file_name=f"meta_ads_filtrado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-    st.markdown("### 💡 Insights Automáticos")
+            fig_conversions.update_layout(height=400, xaxis_tickangle=-45)
+            st.plotly_chart(fig_conversions, use_container_width=True)
+    
+    # Análise de Eficiência de Custo
+    st.markdown("#### 💰 Análise de Eficiência de Custo")
+    
+    if not df.empty and "Valor usado (BRL)" in df.columns:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Scatter plot: Investimento vs Conversões
+            fig_investment = px.scatter(
+                df.replace({np.inf: np.nan, -np.inf: np.nan}).dropna(subset=["Valor usado (BRL)", "Conversões"]),
+                x="Valor usado (BRL)",
+                y="Conversões",
+                color="CTR_calc",
+                size="Impressões",
+                hover_name="Nome do anúncio" if "Nome do anúncio" in df.columns else None,
+                title="Investimento vs Conversões",
+                labels={
+                    "Valor usado (BRL)": "Investimento (R$)",
+                    "Conversões": "Conversões",
+                    "CTR_calc": "CTR (%)"
+                }
+            )
+            fig_investment.update_layout(height=400)
+            st.plotly_chart(fig_investment, use_container_width=True)
+        
+        with col2:
+            # Scatter plot: CPC vs CTR
+            fig_efficiency = px.scatter(
+                df.replace({np.inf: np.nan, -np.inf: np.nan}).dropna(subset=["CPC_calc", "CTR_calc"]),
+                x="CPC_calc",
+                y="CTR_calc",
+                color="Conversões",
+                size="Impressões",
+                hover_name="Nome do anúncio" if "Nome do anúncio" in df.columns else None,
+                title="Eficiência: CPC vs CTR",
+                labels={
+                    "CPC_calc": "CPC (R$)",
+                    "CTR_calc": "CTR (%)",
+                    "Conversões": "Conversões"
+                }
+            )
+            fig_efficiency.update_layout(height=400)
+            st.plotly_chart(fig_efficiency, use_container_width=True)
+    
+    # Análise Temporal
+    st.markdown("#### 📅 Análise Temporal de Performance")
+    
+    if "Data" in df.columns and not df.empty:
+        # Agrupar por data
+        daily_performance = df.groupby("Data").agg({
+            "Impressões": "sum",
+            "Cliques no link": "sum",
+            "Conversões": "sum",
+            "Valor usado (BRL)": "sum",
+            "CTR_calc": "mean"
+        }).reset_index()
+        
+        # Gráfico de linha temporal
+        fig_timeline = px.line(
+            daily_performance,
+            x="Data",
+            y=["Impressões", "Cliques no link", "Conversões"],
+            title="Performance ao Longo do Tempo",
+            labels={"value": "Quantidade", "variable": "Métrica"}
+        )
+        fig_timeline.update_layout(height=400, xaxis_title="Data")
+        st.plotly_chart(fig_timeline, use_container_width=True)
+    
+    # Análise de Budget Type
+    st.markdown("#### 💳 Análise por Tipo de Orçamento")
+    
+    if "Tipo de orçamento do conjunto de anúncios" in df.columns and not df.empty:
+        budget_analysis = df.groupby("Tipo de orçamento do conjunto de anúncios").agg({
+            "Impressões": "sum",
+            "Cliques no link": "sum",
+            "Conversões": "sum",
+            "Valor usado (BRL)": "sum",
+            "CTR_calc": "mean",
+            "CPC_calc": "mean"
+        }).reset_index()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Gráfico de pizza - Distribuição de investimento
+            fig_budget_pie = px.pie(
+                budget_analysis,
+                values="Valor usado (BRL)",
+                names="Tipo de orçamento do conjunto de anúncios",
+                title="Distribuição de Investimento por Tipo de Orçamento"
+            )
+            fig_budget_pie.update_layout(height=400)
+            st.plotly_chart(fig_budget_pie, use_container_width=True)
+        
+        with col2:
+            # Gráfico de barras - Performance por tipo de orçamento
+            fig_budget_bar = px.bar(
+                budget_analysis,
+                x="Tipo de orçamento do conjunto de anúncios",
+                y=["Conversões", "CTR_calc"],
+                title="Performance por Tipo de Orçamento",
+                barmode="group"
+            )
+            fig_budget_bar.update_layout(height=400, xaxis_tickangle=-45)
+            st.plotly_chart(fig_budget_bar, use_container_width=True)
+    
+    # Insights Automáticos
+    st.markdown("#### 🧠 Insights de Performance")
+    
     insights = []
-
-    # Best CTR
-    if "Nome do anúncio" in df.columns and df["Nome do anúncio"].notna().any():
-        by_ad_ins = (
-            df.groupby("Nome do anúncio")
-            .agg({"CTR_calc": "mean", "CPC_calc": "mean", "Conversões": "sum"})
-            .reset_index()
-        )
-        if not by_ad_ins.empty:
-            best_ctr_row = by_ad_ins.loc[by_ad_ins["CTR_calc"].idxmax()]
-            insights.append(
-                f"O anúncio {best_ctr_row['Nome do anúncio']} teve o maior CTR médio de {best_ctr_row['CTR_calc']*100:.2f}%."
-            )
-            best_cpc_row = by_ad_ins.loc[by_ad_ins["CPC_calc"].idxmin()]
-            insights.append(
-                f"O anúncio {best_cpc_row['Nome do anúncio']} teve o menor CPC médio de R$ {best_cpc_row['CPC_calc']:.2f}."
-            )
-            best_conv_row = by_ad_ins.loc[by_ad_ins["Conversões"].idxmax()]
-            insights.append(
-                f"O anúncio {best_conv_row['Nome do anúncio']} gerou mais conversões ({int(best_conv_row['Conversões'])})."
-            )
-
-    if custo_total > 0 and conversoes_total >= 0:
-        # Simple ROI proxy if conversions value unknown: assume R$0 per conversion, so ROI not computable.
-        # Here we only show CPA if conversions exist.
-        if conversoes_total > 0:
-            cpa = custo_total / conversoes_total
-            insights.append(f"CPA médio estimado: R$ {cpa:.2f}.")
-
-    if not insights:
-        st.info("Sem insights automáticos para o filtro atual.")
+    
+    if not df.empty:
+        # Melhor anúncio por ROI
+        if "Nome do anúncio" in df.columns and "Conversões" in df.columns and "Valor usado (BRL)" in df.columns:
+            ad_roi = df.groupby("Nome do anúncio").agg({
+                "Conversões": "sum",
+                "Valor usado (BRL)": "sum"
+            }).reset_index()
+            ad_roi["ROI"] = ad_roi["Conversões"] / ad_roi["Valor usado (BRL)"] * 100
+            best_roi = ad_roi.loc[ad_roi["ROI"].idxmax()]
+            insights.append(f"🎯 **Melhor ROI**: {best_roi['Nome do anúncio']} com ROI de {best_roi['ROI']:.1f}%")
+        
+        # Anúncio com menor CPC
+        if "CPC_calc" in df.columns:
+            min_cpc = df.loc[df["CPC_calc"].idxmin()]
+            insights.append(f"💰 **Menor CPC**: {min_cpc.get('Nome do anúncio', 'N/A')} com CPC de R$ {min_cpc['CPC_calc']:.2f}")
+        
+        # Anúncio com maior CTR
+        if "CTR_calc" in df.columns:
+            max_ctr = df.loc[df["CTR_calc"].idxmax()]
+            insights.append(f"👆 **Maior CTR**: {max_ctr.get('Nome do anúncio', 'N/A')} com CTR de {max_ctr['CTR_calc']*100:.2f}%")
+        
+        # Análise de tendência
+        if "Data" in df.columns and len(df) > 1:
+            recent_data = df.sort_values("Data").tail(7)  # Últimos 7 registros
+            if len(recent_data) > 1:
+                recent_conv = recent_data["Conversões"].sum()
+                older_data = df.sort_values("Data").head(-7)
+                if len(older_data) > 0:
+                    older_conv = older_data["Conversões"].sum()
+                    if older_conv > 0:
+                        trend = ((recent_conv - older_conv) / older_conv) * 100
+                        if trend > 0:
+                            insights.append(f"📈 **Tendência Positiva**: Conversões aumentaram {trend:.1f}% recentemente")
+                        else:
+                            insights.append(f"📉 **Tendência Negativa**: Conversões diminuíram {abs(trend):.1f}% recentemente")
+    
+    if insights:
+        for insight in insights:
+            st.markdown(insight)
     else:
-        for tip in insights:
-            st.markdown(f"- {tip}")
+        st.info("Insights serão gerados conforme mais dados estiverem disponíveis.")
 
 
 # Footer note
