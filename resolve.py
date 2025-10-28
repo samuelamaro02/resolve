@@ -130,6 +130,7 @@ def load_data(path: str) -> pd.DataFrame:
         "CTR (todos)",
         "CPC (todos) (BRL)",
         "actions:omni_landing_page_view",
+        "Visualizações da página de destino",
     ]
     for c in numeric_like:
         if c in df.columns:
@@ -156,8 +157,10 @@ def load_data(path: str) -> pd.DataFrame:
     else:
         df["CPC_calc"] = np.nan
 
-    # Visits proxy
-    if "actions:omni_landing_page_view" in df.columns:
+    # Visits proxy (prefer explicit landing page views if available)
+    if "Visualizações da página de destino" in df.columns:
+        df["Visitas"] = df["Visualizações da página de destino"].fillna(0)
+    elif "actions:omni_landing_page_view" in df.columns:
         df["Visitas"] = df["actions:omni_landing_page_view"].fillna(0)
     else:
         df["Visitas"] = np.nan
@@ -467,7 +470,8 @@ with tab_compare:
         }).reset_index()
         
         # Calcular métricas adicionais
-        ad_performance["CTR_%"] = ad_performance["CTR_calc"] * 100
+        # CTR_calc já está em pontos percentuais; não multiplicar por 100 novamente
+        ad_performance["CTR_%"] = ad_performance["CTR_calc"]
         ad_performance["CPA"] = ad_performance["Valor usado (BRL)"] / ad_performance["Conversões"].replace(0, np.nan)
         ad_performance["ROAS"] = ad_performance["Conversões"] / ad_performance["Valor usado (BRL)"] * 100  # Assumindo valor por conversão = R$100
         
@@ -629,7 +633,7 @@ with tab_compare:
         # Anúncio com maior CTR
         if "CTR_calc" in df.columns:
             max_ctr = df.loc[df["CTR_calc"].idxmax()]
-            insights.append(f"👆 **Maior CTR**: {max_ctr.get('Nome do anúncio', 'N/A')} com CTR de {max_ctr['CTR_calc']*100:.2f}%")
+            insights.append(f"👆 **Maior CTR**: {max_ctr.get('Nome do anúncio', 'N/A')} com CTR de {max_ctr['CTR_calc']:.2f}%")
         
         # Análise de tendência
         if "Data" in df.columns and len(df) > 1:
